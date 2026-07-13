@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+streamlit
+yfinance
+pandas
+numpy
+plotly
+requests
+pandas-market-calendars
+pytest
+httpx
