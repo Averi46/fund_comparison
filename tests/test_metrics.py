@@ -4,7 +4,9 @@ import pytest
 from backend.metrics import (
     add_growth_of_10k,
     calculate_metrics,
+    calculate_performance_metrics,
     calculate_period_risk_metrics,
+    calculate_rolling_risk,
 )
 
 
@@ -44,4 +46,18 @@ def test_trailing_risk_metrics_use_full_periods():
 
     assert [item["period_years"] for item in metrics] == [1, 3, 5]
     assert all(item["annualized_standard_deviation"] for item in metrics)
+    assert all(item["annualized_downside_deviation"] for item in metrics)
     assert all(item["sharpe_ratio"] is not None for item in metrics)
+    assert all(item["sortino_ratio"] is not None for item in metrics)
+
+    performance = calculate_performance_metrics(frame)
+    assert [item["period"] for item in performance["period_returns"]] == [
+        "YTD",
+        "1 Yr",
+        "3 Yr",
+        "5 Yr",
+        "Since Inception",
+    ]
+    assert len(performance["calendar_year_returns"]) == 3
+    assert len(performance["annualized_return_table"]) == 5
+    assert len(calculate_rolling_risk(frame)) > 0

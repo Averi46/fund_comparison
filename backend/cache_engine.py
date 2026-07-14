@@ -113,6 +113,7 @@ class LazyCacheEngine:
             metadata_record = self.database.read_metadata(normalized)
             metadata_stale = (
                 metadata_record is None
+                or "net_expense_ratio_bps" not in metadata_record[0]
                 or pd.Timestamp.now(tz="UTC") - metadata_record[1]
                 > pd.Timedelta(days=30)
             )

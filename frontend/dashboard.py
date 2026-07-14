@@ -31,17 +31,21 @@ def get_history(ticker: str, benchmark: str | None = None) -> dict:
     return response.json()
 
 
-def format_percent(value: float | None) -> str:
-    return "N/A" if value is None else f"{value:.3%}"
+def format_number_or_dash(value: float | None) -> str:
+    return "-" if value is None else f"{value:.3f}"
 
 
-def format_number(value: float | None) -> str:
-    return "N/A" if value is None else f"{value:.3f}"
+def format_percent_or_dash(value: float | None) -> str:
+    return "-" if value is None else f"{value:.2%}"
+
+
+def format_bps(value: float | None) -> str:
+    return "-" if value is None else f"{value:.0f} bps"
 
 
 def format_assets(value: float | None) -> str:
     if value is None:
-        return "N/A"
+        return "-"
     if value >= 1_000_000_000:
         return f"${value / 1_000_000_000:.2f}B"
     if value >= 1_000_000:
@@ -161,7 +165,12 @@ if not comparison_state:
     st.info("Enter two fund tickers above, then select **Compare funds**.")
     st.stop()
 
-required_response_fields = {"metadata", "risk_metrics"}
+required_response_fields = {
+    "metadata",
+    "risk_metrics",
+    "performance",
+    "rolling_risk",
+}
 outdated_payloads = [
     ticker
     for ticker, payload in comparison_state["results"].items()
@@ -185,31 +194,60 @@ if comparison_state["errors"]:
 tickers = comparison_state["tickers"]
 results = comparison_state["results"]
 
-st.subheader("Fund information")
+st.subheader("Overview")
 metadata = [results[ticker].get("metadata", {}) for ticker in tickers]
 render_table(
     ["Fund detail", tickers[0], tickers[1]],
     [
-        ["Full fund name", metadata[0].get("full_name") or "N/A", metadata[1].get("full_name") or "N/A"],
+        [
+            "Full fund name",
+            metadata[0].get("full_name") or "-",
+            metadata[1].get("full_name") or "-",
+        ],
+        [
+            "Net expense ratio",
+            format_bps(metadata[0].get("net_expense_ratio_bps")),
+            format_bps(metadata[1].get("net_expense_ratio_bps")),
+        ],
         [
             "Gross expense ratio",
-            format_percent(metadata[0].get("gross_expense_ratio")),
-            format_percent(metadata[1].get("gross_expense_ratio")),
+            format_bps(metadata[0].get("gross_expense_ratio_bps")),
+            format_bps(metadata[1].get("gross_expense_ratio_bps")),
         ],
         [
             "Morningstar category",
-            metadata[0].get("morningstar_category") or "N/A",
-            metadata[1].get("morningstar_category") or "N/A",
+            metadata[0].get("morningstar_category") or "-",
+            metadata[1].get("morningstar_category") or "-",
         ],
         [
-            "Total net assets",
-            format_assets(metadata[0].get("total_net_assets")),
-            format_assets(metadata[1].get("total_net_assets")),
+            "Fund assets",
+            format_assets(metadata[0].get("fund_assets")),
+            format_assets(metadata[1].get("fund_assets")),
+        ],
+        [
+            "Share class assets",
+            format_assets(metadata[0].get("share_class_assets")),
+            format_assets(metadata[1].get("share_class_assets")),
+        ],
+        [
+            "12-month yield (%)",
+            format_percent_or_dash(metadata[0].get("twelve_month_yield")),
+            format_percent_or_dash(metadata[1].get("twelve_month_yield")),
+        ],
+        [
+            "30-day SEC yield (%)",
+            format_percent_or_dash(metadata[0].get("thirty_day_sec_yield")),
+            format_percent_or_dash(metadata[1].get("thirty_day_sec_yield")),
+        ],
+        [
+            "Unsubsidized SEC yield (%)",
+            format_percent_or_dash(metadata[0].get("unsubsidized_sec_yield")),
+            format_percent_or_dash(metadata[1].get("unsubsidized_sec_yield")),
         ],
         [
             "Investment style",
-            metadata[0].get("investment_style") or "N/A",
-            metadata[1].get("investment_style") or "N/A",
+            metadata[0].get("investment_style") or "-",
+            metadata[1].get("investment_style") or "-",
         ],
         [
             "Inception date",
@@ -222,36 +260,25 @@ render_table(
 for ticker in tickers:
     st.info(source_message(results[ticker]))
 
-st.subheader("Risk")
-risk_by_ticker = {}
-for ticker in tickers:
-    risk_by_ticker[ticker] = {
-        item["period_years"]: item for item in results[ticker]["risk_metrics"]
-    }
+st.subheader("Performance")
 
 
-def risk_bar_chart(
-    metric: str,
+def grouped_bar_chart(
     title: str,
+    x_values: list[str],
+    values_by_ticker: dict[str, list[float | None]],
     y_axis_title: str,
     percentage: bool = False,
 ) -> go.Figure:
     figure = go.Figure()
-    periods = [1, 3, 5]
     for ticker in tickers:
-        values = [risk_by_ticker[ticker][year][metric] for year in periods]
+        values = values_by_ticker[ticker]
         if percentage:
             values = [value * 100 if value is not None else None for value in values]
-        figure.add_trace(
-            go.Bar(
-                x=[f"{year}Y" for year in periods],
-                y=values,
-                name=ticker,
-            )
-        )
+        figure.add_trace(go.Bar(x=x_values, y=values, name=ticker))
     figure.update_layout(
         title=title,
-        xaxis_title="Trailing period",
+        xaxis_title="Period",
         yaxis_title=y_axis_title,
         barmode="group",
         legend_title="Fund",
@@ -263,48 +290,68 @@ def risk_bar_chart(
     return figure
 
 
-risk_chart_rows = st.columns(2), st.columns(2)
-risk_charts = [
-    risk_bar_chart(
-        "annualized_return",
-        "Annualized Return",
-        "Annualized return (%)",
-        percentage=True,
-    ),
-    risk_bar_chart(
-        "annualized_standard_deviation",
-        "Annualized Standard Deviation",
-        "Annualized standard deviation (%)",
-        percentage=True,
-    ),
-    risk_bar_chart(
-        "maximum_drawdown",
-        "Maximum Drawdown",
-        "Maximum drawdown (%)",
-        percentage=True,
-    ),
-    risk_bar_chart("sharpe_ratio", "Sharpe Ratio", "Sharpe ratio"),
+performance_periods = [
+    item["period"] for item in results[tickers[0]]["performance"]["period_returns"]
 ]
-for chart, column in zip(
-    risk_charts,
-    [
-        risk_chart_rows[0][0],
-        risk_chart_rows[0][1],
-        risk_chart_rows[1][0],
-        risk_chart_rows[1][1],
-    ],
-):
-    column.plotly_chart(chart, width="stretch")
-
+performance_chart = grouped_bar_chart(
+    "Annualized Total Returns",
+    performance_periods,
+    {
+        ticker: [
+            item["return"]
+            for item in results[ticker]["performance"]["period_returns"]
+        ]
+        for ticker in tickers
+    },
+    "Total return (%)",
+    percentage=True,
+)
+st.plotly_chart(performance_chart, width="stretch")
 st.caption(
-    "Risk statistics use daily total returns and 252 trading days per year. "
-    "Sharpe ratios assume a 0% risk-free rate; N/A indicates insufficient history."
+    "YTD and any since-inception period shorter than one year are cumulative "
+    "total returns and are not annualized. Periods of one year or longer are "
+    "annualized from daily total returns."
 )
 
-st.metric(
-    f"Daily-return correlation: {tickers[0]} vs. {tickers[1]}",
-    format_number(results[tickers[0]]["metrics"]["correlation"]),
+calendar_years = [
+    str(item["year"])
+    for item in results[tickers[0]]["performance"]["calendar_year_returns"]
+]
+calendar_chart = grouped_bar_chart(
+    "Calendar Year Total Returns",
+    calendar_years,
+    {
+        ticker: [
+            item["return"]
+            for item in results[ticker]["performance"]["calendar_year_returns"]
+        ]
+        for ticker in tickers
+    },
+    "Total return (%)",
+    percentage=True,
 )
+st.plotly_chart(calendar_chart, width="stretch")
+
+for ticker in tickers:
+    table_data = results[ticker]["performance"]["annualized_return_table"]
+    st.markdown(f"**{ticker} annualized returns**")
+    render_table(
+        [
+            "Period",
+            "Total return",
+            "Load-adjusted total return",
+            "Market-price total return",
+        ],
+        [
+            [
+                item["period"],
+                format_percent_or_dash(item["total_return"]),
+                format_percent_or_dash(item["load_adjusted_total_return"]),
+                format_percent_or_dash(item["market_price_total_return"]),
+            ]
+            for item in table_data
+        ],
+    )
 
 growth_figure = go.Figure()
 returns_figure = go.Figure()
@@ -350,3 +397,141 @@ returns_figure.update_layout(
 )
 returns_figure.update_yaxes(ticksuffix="%", tickformat=",.2f", zeroline=True)
 st.plotly_chart(returns_figure, width="stretch")
+
+st.subheader("Risk")
+risk_by_ticker = {
+    ticker: {
+        item["period_years"]: item for item in results[ticker]["risk_metrics"]
+    }
+    for ticker in tickers
+}
+risk_periods = ["1Y", "3Y", "5Y"]
+risk_columns = st.columns(2)
+risk_columns[0].plotly_chart(
+    grouped_bar_chart(
+        "Annualized Standard Deviation",
+        risk_periods,
+        {
+            ticker: [
+                risk_by_ticker[ticker][year][
+                    "annualized_standard_deviation"
+                ]
+                for year in (1, 3, 5)
+            ]
+            for ticker in tickers
+        },
+        "Annualized standard deviation (%)",
+        percentage=True,
+    ),
+    width="stretch",
+)
+risk_columns[1].plotly_chart(
+    grouped_bar_chart(
+        "Annualized Downside Standard Deviation",
+        risk_periods,
+        {
+            ticker: [
+                risk_by_ticker[ticker][year][
+                    "annualized_downside_deviation"
+                ]
+                for year in (1, 3, 5)
+            ]
+            for ticker in tickers
+        },
+        "Annualized downside deviation (%)",
+        percentage=True,
+    ),
+    width="stretch",
+)
+
+rolling_figure = go.Figure()
+for ticker in tickers:
+    rolling = results[ticker]["rolling_risk"]
+    rolling_figure.add_trace(
+        go.Scatter(
+            x=[item["date"] for item in rolling],
+            y=[item["standard_deviation"] * 100 for item in rolling],
+            mode="lines",
+            name=ticker,
+        )
+    )
+rolling_figure.update_layout(
+    title="Rolling 3-Year Annualized Standard Deviation",
+    xaxis_title="Date",
+    yaxis_title="Annualized standard deviation (%)",
+    hovermode="x unified",
+    legend_title="Fund",
+)
+rolling_figure.update_yaxes(ticksuffix="%", tickformat=",.2f")
+st.plotly_chart(rolling_figure, width="stretch")
+
+st.plotly_chart(
+    grouped_bar_chart(
+        "Annualized Sharpe Ratio",
+        risk_periods,
+        {
+            ticker: [
+                risk_by_ticker[ticker][year]["sharpe_ratio"]
+                for year in (1, 3, 5)
+            ]
+            for ticker in tickers
+        },
+        "Sharpe ratio",
+    ),
+    width="stretch",
+)
+st.caption(
+    "Risk statistics are calculated from daily total returns using 252 trading "
+    "days per year and a 0% risk-free rate. Sharpe and Sortino are unitless ratios."
+)
+
+st.markdown("### Ex post risk analysis")
+for ticker in tickers:
+    st.markdown(f"**{ticker} ex post risk**")
+    render_table(
+        [
+            "Period",
+            "Avg gain (%)",
+            "Gain frequency (%)",
+            "Avg loss (%)",
+            "Loss frequency (%)",
+            "Max drawdown (%)",
+        ],
+        [
+            [
+                f"{years} Yr",
+                format_percent_or_dash(
+                    risk_by_ticker[ticker][years]["average_gain"]
+                ),
+                format_percent_or_dash(
+                    risk_by_ticker[ticker][years]["gain_frequency"]
+                ),
+                format_percent_or_dash(
+                    risk_by_ticker[ticker][years]["average_loss"]
+                ),
+                format_percent_or_dash(
+                    risk_by_ticker[ticker][years]["loss_frequency"]
+                ),
+                format_percent_or_dash(
+                    risk_by_ticker[ticker][years]["maximum_drawdown"]
+                ),
+            ]
+            for years in (1, 3, 5)
+        ],
+    )
+
+render_table(
+    ["3-Year Risk / Return", tickers[0], tickers[1]],
+    [
+        [
+            "Sharpe ratio",
+            format_number_or_dash(risk_by_ticker[tickers[0]][3]["sharpe_ratio"]),
+            format_number_or_dash(risk_by_ticker[tickers[1]][3]["sharpe_ratio"]),
+        ],
+        [
+            "Sortino ratio",
+            format_number_or_dash(risk_by_ticker[tickers[0]][3]["sortino_ratio"]),
+            format_number_or_dash(risk_by_ticker[tickers[1]][3]["sortino_ratio"]),
+        ],
+    ],
+)

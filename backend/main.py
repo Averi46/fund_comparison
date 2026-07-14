@@ -7,7 +7,9 @@ from backend.market_data import MarketDataError, YFinanceClient
 from backend.metrics import (
     add_growth_of_10k,
     calculate_metrics,
+    calculate_performance_metrics,
     calculate_period_risk_metrics,
+    calculate_rolling_risk,
 )
 
 
@@ -84,6 +86,8 @@ def fund_history(
         "data": records,
         "metrics": metrics,
         "risk_metrics": calculate_period_risk_metrics(result.data),
+        "performance": calculate_performance_metrics(result.data),
+        "rolling_risk": calculate_rolling_risk(result.data),
         "request": {
             "source": result.source,
             "fetched_rows": result.fetched_rows,

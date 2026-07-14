@@ -96,14 +96,35 @@ class YFinanceClient:
                 dominant = max(positive_assets, key=positive_assets.get)
                 investment_style = f"{dominant.title()} focused"
 
-        return apply_metadata_overrides(ticker, {
-            "full_name": info.get("longName") or info.get("shortName") or ticker,
-            "gross_expense_ratio": info.get("annualReportExpenseRatio"),
-            "morningstar_category": category,
-            "total_net_assets": info.get("netAssets") or info.get("totalAssets"),
-            "investment_style": investment_style or category,
-            "inception_date": inception_date,
-        })
+        gross_expense_ratio = info.get("annualReportExpenseRatio")
+        net_expense_ratio = info.get("netExpenseRatio")
+        return apply_metadata_overrides(
+            ticker,
+            {
+                "full_name": info.get("longName")
+                or info.get("shortName")
+                or ticker,
+                "gross_expense_ratio_bps": (
+                    float(gross_expense_ratio) * 10_000
+                    if gross_expense_ratio is not None
+                    else None
+                ),
+                "net_expense_ratio_bps": (
+                    float(net_expense_ratio) * 100
+                    if net_expense_ratio is not None
+                    else None
+                ),
+                "morningstar_category": category,
+                "fund_assets": info.get("totalAssets"),
+                "share_class_assets": info.get("netAssets"),
+                "twelve_month_yield": info.get("yield"),
+                "thirty_day_sec_yield": info.get("thirtyDaySECYield")
+                or info.get("secYield"),
+                "unsubsidized_sec_yield": info.get("unsubsidizedSECYield"),
+                "investment_style": investment_style or category,
+                "inception_date": inception_date,
+            },
+        )
 
     @staticmethod
     def _adjusted_close_column(history: pd.DataFrame) -> pd.Series:

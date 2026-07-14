@@ -65,12 +65,14 @@ error and do not create empty cache records.
 
 - Growth of $10,000 uses compounded daily total returns.
 - Cumulative total return shows the same performance as a percentage.
-- Grouped risk charts compare trailing 1-, 3-, and 5-year annualized returns,
-  annualized daily standard deviation, maximum drawdown, and Sharpe ratio.
-- Sharpe ratio uses 252 trading days and a 0% risk-free rate.
-- Correlation uses overlapping daily returns for the selected benchmark.
+- Performance includes YTD, trailing, since-inception, and recent calendar-year
+  returns. Periods shorter than one year are not annualized.
+- Risk analytics include standard deviation, downside deviation, rolling
+  three-year volatility, Sharpe, Sortino, gain/loss statistics, and drawdown.
+- Annualized risk metrics use 252 trading days; Sharpe and Sortino use a 0%
+  risk-free rate.
 - Fund facts are fetched from Yahoo and cached for 30 days. Missing Yahoo
-  fields are displayed as `N/A`.
+  fields and unavailable specialized return series are displayed as `-`.
 - Known Yahoo metadata errors can be corrected in
   `fund_metadata_overrides.csv`; local values take precedence over the cache.
 
